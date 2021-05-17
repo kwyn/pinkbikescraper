@@ -178,7 +178,11 @@ func RunScraper() {
 }
 
 func main() {
-	c := cron.New()
+	location, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		log.Fatal(err)
+	}
+	c := cron.New(cron.WithLocation(location))
 	c.AddFunc("0 7,12,18 * * *", RunScraper)
 	c.Run()
 }
