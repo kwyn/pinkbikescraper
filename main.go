@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"regexp"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/kwyn/bikealert/twilio"
+	"github.com/robfig/cron/v3"
 )
 
 type Config struct {
@@ -43,19 +43,19 @@ func (l *Listing) String() string {
 
 func Scrape() []*Listing {
 	// Request the HTML page.
-	res, err := http.Get("https://www.pinkbike.com/buysell/list/?lat=37.8663&lng=-122.132&distance=100&category=2&price=..2500&framesize=23,27,34,35,36,30,31,47&material=2")
+	res, err := http.Get("https://www.pinkbike.com/buysell/list/?lat=37.7662&lng=-122.1887&distance=100&category=2&price=..2500&framesize=23,27,34,35,36,30,31,47&material=2")
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
-		log.Fatalf("status code error: %d %s", res.StatusCode, res.Status)
+		log.Printf("status code error: %d %s\n", res.StatusCode, res.Status)
 	}
 
 	// Load the HTML document
 	doc, err := goquery.NewDocumentFromReader(res.Body)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 	listings := make([]*Listing, 0)
 	// Find the review items
@@ -102,7 +102,7 @@ func ScrapeDate(listing *Listing) error {
 	t := c.Text()
 	r, err := regexp.Compile(`(\w{3}-\d\d-\d\d\d\d \d?\d:\d\d:\d\d)`)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 	matches := r.FindStringSubmatch(t)
 
@@ -139,7 +139,7 @@ func filterListings(c Clock, listings []*Listing) []*Listing {
 	return filtered
 }
 
-func main() {
+func RunScraper() {
 	fmt.Println("Read Config")
 	var config Config
 	err := envconfig.Process("pbscraper", &config)
@@ -157,13 +157,13 @@ func main() {
 		Number:    config.TwilioNumber,
 		Client:    client,
 	}
-	fmt.Println(config.TwilioAuthToken, config.TwilioSID, config.TwilioNumber, config.RecipientNumber)
+
 	fmt.Println("Scrape for bikes")
 	listings := Scrape()
 	listings = filterListings(&SystemClock{}, listings)
 	if len(listings) < 1 {
 		fmt.Println("No new bikes")
-		os.Exit(0)
+		return
 	}
 
 	message := "New Bikes:\n"
@@ -173,6 +173,12 @@ func main() {
 	fmt.Println("Found some bikes\n", message)
 	err = t.Send(config.RecipientNumber, "🚵‍♀️ MTN BIKE ALERT 🚵‍♀️:\n"+message)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
+}
+
+func main() {
+	c := cron.New()
+	c.AddFunc("0 7,12,18 * * *", RunScraper)
+	c.Run()
 }
